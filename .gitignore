@@ -8,6 +8,5 @@ STM_Control/FDCAN_Com_Polling/EWARM/
 STM_Control/FDCAN_Com_Polling/FDCAN_Com_Polling.ioc
 STM_Control/FDCAN_Com_Polling/Inc/
 STM_Control/FDCAN_Com_Polling/MDK-ARM/
-STM_Control/FDCAN_Com_Polling/README.md
 STM_Control/FDCAN_Com_Polling/STM32CubeIDE/
 .DS_Store
