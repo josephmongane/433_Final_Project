@@ -1,0 +1,16 @@
+!SESSION 2026-06-05 13:58:32.730 -----------------------------------------------
+eclipse.buildId=Version 2.1.1
+java.version=21.0.9
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=macosx, ARCH=aarch64, WS=cocoa, NL=en_US
+Framework arguments:  -keyring /Users/josephmongane/.eclipse_keyring
+Command-line arguments:  -os macosx -ws cocoa -arch aarch64 -keyring /Users/josephmongane/.eclipse_keyring
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2026-06-05 13:59:27.735
+!MESSAGE Log4j2 initialized with config file /Users/josephmongane/Documents/GitHub/433_Final_Project/STM_Control/FDCAN_Com_Polling/.metadata/.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2026-06-05 13:59:29.362
+!MESSAGE Started RMI Server, listening on port 41337
+
+!ENTRY org.eclipse.cdt.core 1 0 2026-06-05 14:01:02.915
+!MESSAGE Indexed 'STM32CubeIDE' (24 sources, 88 headers) in 1.17 sec: 5,476 declarations; 27,045 references; 0 unresolved inclusions; 1 syntax errors; 2 unresolved names (0.0061%)
