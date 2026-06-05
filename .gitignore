@@ -1,0 +1,26 @@
+# Large binary files - use Git LFS for these
+*.zip
+*.exe
+*.dmg
+*.iso
+*.bin
+*.elf
+*.hex
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE and build artifacts
+.metadata
+.settings
+.project
+.cproject
+*.o
+*.a
+*.so
+*.dylib
+build/
+dist/
+*.class
+*.jar
