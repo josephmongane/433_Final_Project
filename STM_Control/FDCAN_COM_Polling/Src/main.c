@@ -49,6 +49,7 @@ ADC_HandleTypeDef hadc1;
 FDCAN_HandleTypeDef hfdcan1;
 
 TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart2;
 
@@ -60,6 +61,8 @@ static const uint8_t txData[] = {0x10, 0x32, 0x54, 0x76, 0x98, 0x00, 0x11, 0x22,
                                  0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x00
                                 };
 
+volatile uint32_t my_voltage_raw;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -69,6 +72,7 @@ static void MX_FDCAN1_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 static uint32_t BufferCmp8b(const uint8_t *pBuffer1, const uint8_t *pBuffer2, uint16_t BufferLength);
 
@@ -156,6 +160,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_ADC1_Init();
   MX_TIM1_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
   /* Configure reception filter to Rx FIFO 0 */
@@ -218,6 +223,11 @@ int main(void)
 
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+
+  HAL_TIM_Base_Start_IT(&htim2);
+
+
+  // START the internal timer clock interrupt (replace htim3 with your interrupt timer)
   /* USER CODE END 2 */
 
   /* Initialize leds */
@@ -233,18 +243,14 @@ int main(void)
     {
       /* Do nothing, wait */
         // Call your new function and pass the address of your ADC instance
-        uint32_t my_voltage_raw = Read_ADC_Value(&hadc1);
-
         // Print the returned result
         printf("ADC Read: %lu\r\n", my_voltage_raw);
+
+        HAL_Delay(500);
 
 		__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 2400);
 		__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 2400);
 
-        HAL_Delay(500);
-
-		__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1000);
-		__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 1000);
     }
 
 
@@ -487,6 +493,51 @@ static void MX_TIM1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 0;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 48000;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -541,6 +592,15 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM2) // Match your interrupt timer instance
+    {
+        my_voltage_raw = Read_ADC_Value(&hadc1);
+    }
+}
+/* USER CODE END 4 */
 
 /**
   * @brief  BSP User push-button callback
