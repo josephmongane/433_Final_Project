@@ -71,6 +71,9 @@ static const uint8_t txData[] = {0x10, 0x32, 0x54, 0x76, 0x98, 0x00, 0x11, 0x22,
 
 volatile uint32_t my_voltage_raw;
 
+volatile uint8_t uart_rx_byte = 0;
+volatile uint8_t uart_rx_flag = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -320,6 +323,8 @@ int main(void)
 
 
   // START the internal timer clock interrupt (replace htim3 with your interrupt timer)
+  HAL_UART_Receive_IT(&huart2, (uint8_t*)&uart_rx_byte, 1);
+
   /* USER CODE END 2 */
 
   /* Initialize leds */
@@ -333,20 +338,28 @@ int main(void)
     /* Polling mode: Wait for one message received */
     while (HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0) < 1U)
     {
-		printf("Received 'A' - Starting motor sequence\r\n");
+        if (uart_rx_flag)
+        {
+            uart_rx_flag = 0;
 
-		SetPWM(50);
-		HAL_Delay(500);
+            printf("Received 'A' - Starting motor sequence\r\n");
 
-		SetPWM(-50);
-		HAL_Delay(500);
+            SetPWM(50);
+            HAL_Delay(500);
+            float current_fwd = read_ina219();
+            printf("Forward Current: %d mA\r\n", (int)current_fwd);
 
-		// Flush any bytes that arrived during the sequence
-        printf("ADC Read: %lu\r\n", my_voltage_raw);
-        float current = read_ina219();
-        printf("Current Value: %d\r\n", (int)(current));
-
-        HAL_Delay(100);
+            SetPWM(-50);
+            HAL_Delay(500);
+            float current_rev = read_ina219();
+            printf("Reverse Current: %d mA\r\n", (int)current_rev);
+            SetPWM(0);
+        }
+        else
+        {
+            printf("Hello\r\n");
+            HAL_Delay(1000);
+        }
     }
 
 
@@ -768,6 +781,22 @@ static uint32_t BufferCmp8b(const uint8_t *pBuffer1, const uint8_t *pBuffer2, ui
   }
   return 0U;
 }
+
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART2)
+    {
+        if (uart_rx_byte == 'A')
+        {
+            uart_rx_flag = 1;
+        }
+        // Re-arm the interrupt for the next byte
+        HAL_UART_Receive_IT(&huart2, (uint8_t*)&uart_rx_byte, 1);
+    }
+}
+
+
 /* USER CODE END 4 */
 
 /**
