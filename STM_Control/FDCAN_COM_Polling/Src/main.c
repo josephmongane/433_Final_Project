@@ -83,6 +83,26 @@ PUTCHAR_PROTOTYPE {
   HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
   return ch;
 }
+/**
+  * @brief  Reads a raw 12-bit value from the specified ADC instance.
+  * @param  hadc: Pointer to the ADC handle (e.g., &hadc1)
+  * @retval The raw digital ADC value (0 to 4095), or 0 if conversion fails.
+  */
+uint32_t Read_ADC_Value(ADC_HandleTypeDef *hadc)
+{
+    uint32_t value = 0;
+
+    if (HAL_ADC_Start(hadc) == HAL_OK)
+    {
+        if (HAL_ADC_PollForConversion(hadc, 10) == HAL_OK)
+        {
+            value = HAL_ADC_GetValue(hadc);
+        }
+        HAL_ADC_Stop(hadc);
+    }
+
+    return value;
+}
 /* USER CODE END 0 */
 
 /**
@@ -205,20 +225,11 @@ int main(void)
     while (HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0) < 1U)
     {
       /* Do nothing, wait */
-        printf("ADC loop\n");
+        // Call your new function and pass the address of your ADC instance
+        uint32_t my_voltage_raw = Read_ADC_Value(&hadc1);
 
-        HAL_ADC_Start(&hadc1);                                 // start conversion
-
-        if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK)
-        {
-            // 3. Read the converted value and store it in a variable
-            uint32_t adc_val = HAL_ADC_GetValue(&hadc1);
-
-            // Print the value to your working UART port
-            printf("ADC Value: %lu\n", adc_val);
-        }
-
-        HAL_ADC_Stop(&hadc1);
+        // Print the returned result
+        printf("ADC Read: %lu\r\n", my_voltage_raw);
 
         HAL_Delay(500);
     }
