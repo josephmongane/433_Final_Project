@@ -25,6 +25,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -41,6 +42,10 @@
 #define INA219_REG_CONFIG 0x00 // config register address
 #define INA219_REG_CURRENT 0x04 // current register
 #define INA219_REG_CALIBRATION 0x05 // calibration register
+
+#define ADC_LOWER_LIMIT 500   // Stop threshold near 0
+#define ADC_UPPER_LIMIT 3500  // Stop threshold near 4095
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -74,6 +79,8 @@ volatile uint32_t my_voltage_raw;
 volatile uint8_t uart_rx_byte = 0;
 volatile uint8_t uart_rx_flag = 0;
 
+volatile int16_t current_setpoints[400];
+volatile uint16_t setpoint_index = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -93,6 +100,9 @@ float read_ina219();
 void writeINA219(int reg, int value);
 signed short readINA219(unsigned char reg);
 void SetPWM(int8_t duty_cycle);
+uint8_t CheckADCLimit(void);
+
+void InitCurrentSetpoints(void);
 
 /* USER CODE END PFP */
 
@@ -203,6 +213,44 @@ void SetPWM(int8_t duty_cycle)
         __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
     }
 }
+
+/**
+  * @brief  Checks the ADC value and kills PWM if approaching either limit.
+  * @retval 1 if limit triggered and PWM was stopped, 0 if safe to continue
+  */
+uint8_t CheckADCLimit(void)
+{
+    uint32_t adc = my_voltage_raw;
+
+    if (adc <= ADC_LOWER_LIMIT)
+    {
+        SetPWM(0);
+        printf("ADC lower limit hit: %lu\r\n", adc);
+        return 1;
+    }
+    else if (adc >= ADC_UPPER_LIMIT)
+    {
+        SetPWM(0);
+        printf("ADC upper limit hit: %lu\r\n", adc);
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+  * @brief  Initializes current_setpoints with a sine wave profile
+  *         ranging from -50mA to +50mA over 400 samples.
+  * @retval None
+  */
+void InitCurrentSetpoints(void)
+{
+    for (int i = 0; i < 400; i++)
+    {
+        // Scale sine wave from -1.0 to 1.0 into -50 to 50 mA
+        current_setpoints[i] = (int16_t)(50.0f * sinf((2.0f * 3.14159f * i) / 400.0f));
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -256,6 +304,7 @@ int main(void)
   MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
   init_ina219();
+  InitCurrentSetpoints();
 
 
   /* Configure reception filter to Rx FIFO 0 */
@@ -344,20 +393,23 @@ int main(void)
 
             printf("Received 'A' - Starting motor sequence\r\n");
 
-            SetPWM(50);
-            HAL_Delay(500);
-            float current_fwd = read_ina219();
-            printf("Forward Current: %d mA\r\n", (int)current_fwd);
+            if (!CheckADCLimit())
+            {
+				SetPWM(50);
+				HAL_Delay(500);
+				float current_fwd = read_ina219();
+				printf("Forward Current: %d mA\r\n", (int)current_fwd);
 
-            SetPWM(-50);
-            HAL_Delay(500);
-            float current_rev = read_ina219();
-            printf("Reverse Current: %d mA\r\n", (int)current_rev);
-            SetPWM(0);
+				SetPWM(-50);
+				HAL_Delay(500);
+				float current_rev = read_ina219();
+				printf("Reverse Current: %d mA\r\n", (int)current_rev);
+				SetPWM(0);
+            }
         }
         else
         {
-            printf("Hello\r\n");
+            printf("POSN: %lu\r\n", my_voltage_raw);
             HAL_Delay(1000);
         }
     }
@@ -755,6 +807,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     if (htim->Instance == TIM2) // Match your interrupt timer instance
     {
         my_voltage_raw = Read_ADC_Value(&hadc1);
+
     }
 }
 
