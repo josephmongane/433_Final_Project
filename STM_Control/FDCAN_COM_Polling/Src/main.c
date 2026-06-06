@@ -333,31 +333,18 @@ int main(void)
     /* Polling mode: Wait for one message received */
     while (HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0) < 1U)
     {
-        uint8_t rx_byte = 0;
+		printf("Received 'A' - Starting motor sequence\r\n");
 
-        if (HAL_UART_Receive(&huart2, &rx_byte, 1, 0) == HAL_OK)
-        {
-            if (rx_byte == 'A')
-            {
-                printf("Received 'A' - Starting motor sequence\r\n");
+		SetPWM(50);
+		HAL_Delay(500);
 
-                SetPWM(50);
-                HAL_Delay(500);
+		SetPWM(-50);
+		HAL_Delay(500);
 
-                SetPWM(-50);
-                HAL_Delay(500);
-
-                SetPWM(0);
-
-                // Flush any bytes that arrived during the sequence
-                uint8_t flush;
-                while (HAL_UART_Receive(&huart2, &flush, 1, 0) == HAL_OK);
-            }
-        }
-
+		// Flush any bytes that arrived during the sequence
         printf("ADC Read: %lu\r\n", my_voltage_raw);
         float current = read_ina219();
-        printf("Current Value: %d\r\n", (int)(current * 10000.0f));
+        printf("Current Value: %d\r\n", (int)(current));
 
         HAL_Delay(100);
     }
