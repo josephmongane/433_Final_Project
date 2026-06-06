@@ -24,6 +24,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <stdlib.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -35,6 +36,11 @@
 /* USER CODE BEGIN PD */
 #define TX_ID          (0x111)   /* TX CAN message identifier    */
 #define RX_ID          (0x111)   /* RX CAN message identifier    */
+
+#define INA219_ADDR 0b1000000 // I2C address
+#define INA219_REG_CONFIG 0x00 // config register address
+#define INA219_REG_CURRENT 0x04 // current register
+#define INA219_REG_CALIBRATION 0x05 // calibration register
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -47,6 +53,8 @@
 ADC_HandleTypeDef hadc1;
 
 FDCAN_HandleTypeDef hfdcan1;
+
+I2C_HandleTypeDef hi2c2;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
@@ -73,8 +81,15 @@ static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_I2C2_Init(void);
 /* USER CODE BEGIN PFP */
 static uint32_t BufferCmp8b(const uint8_t *pBuffer1, const uint8_t *pBuffer2, uint16_t BufferLength);
+
+void init_ina219();
+float read_ina219();
+void writeINA219(int reg, int value);
+signed short readINA219(unsigned char reg);
+void SetPWM(int8_t duty_cycle);
 
 /* USER CODE END PFP */
 
@@ -90,6 +105,7 @@ PUTCHAR_PROTOTYPE {
   HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
   return ch;
 }
+
 /**
   * @brief  Reads a raw 12-bit value from the specified ADC instance.
   * @param  hadc: Pointer to the ADC handle (e.g., &hadc1)
@@ -109,6 +125,80 @@ uint32_t Read_ADC_Value(ADC_HandleTypeDef *hadc)
     }
 
     return value;
+}
+
+
+
+void init_ina219(){
+    // set the INA219 sensitivity - 10 bit, plus/minus160mV, 148us per sample
+    unsigned short ina219_calValue = 1024;
+    unsigned short ina219_config = 0b0011000010001111;
+    writeINA219(INA219_REG_CALIBRATION, ina219_calValue);
+    writeINA219(INA219_REG_CONFIG, ina219_config);
+}
+
+float read_ina219(){
+    float ma = 0;
+    signed short value = readINA219(INA219_REG_CURRENT);
+    ma = value / 3.0;
+    return ma;
+}
+
+// write 2 bytes
+void writeINA219(int reg, int value){
+    uint8_t buf[3];
+    buf[0] = reg;
+    buf[1] = value>>8;
+    buf[2] = value&0xff;
+
+    HAL_I2C_Master_Transmit(&hi2c2, INA219_ADDR<<1, buf, 3, 10);
+}
+
+// read 2 bytes
+signed short readINA219(unsigned char reg){
+    HAL_I2C_Master_Transmit(&hi2c2, INA219_ADDR<<1, &reg, 1, 10);
+    uint8_t buffer[2];
+    HAL_I2C_Master_Receive(&hi2c2, INA219_ADDR<<1, buffer, 2, 10);
+
+    signed short value = (buffer[0]<<8)|buffer[1];
+    return value;
+}
+
+/**
+  * @brief  Sets the PWM duty cycle for motor control on TIM1 CH1 and CH2.
+  * @param  duty_cycle: Signed integer from -100 to 100.
+  *         Positive → forward (CH1 active, CH2 = 0)
+  *         Negative → reverse (CH2 active, CH1 = 0)
+  *         Zero     → coast (both channels = 0)
+  * @retval None
+  */
+void SetPWM(int8_t duty_cycle)
+{
+    // Clamp input to valid range
+    if (duty_cycle > 100)  duty_cycle = 100;
+    if (duty_cycle < -100) duty_cycle = -100;
+
+    // TIM1 period is 2400, so scale duty cycle accordingly
+    uint32_t compare = (uint32_t)((abs(duty_cycle) * 2400) / 100);
+
+    if (duty_cycle > 0)
+    {
+        // Forward: CH1 drives, CH2 idle
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, compare);
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+    }
+    else if (duty_cycle < 0)
+    {
+        // Reverse: CH2 drives, CH1 idle
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, compare);
+    }
+    else
+    {
+        // Coast: both channels off
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+    }
 }
 /* USER CODE END 0 */
 
@@ -138,7 +228,6 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -161,7 +250,10 @@ int main(void)
   MX_ADC1_Init();
   MX_TIM1_Init();
   MX_TIM2_Init();
+  MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
+  init_ina219();
+
 
   /* Configure reception filter to Rx FIFO 0 */
   FDCAN_FilterTypeDef        sFilterConfig;
@@ -241,16 +333,33 @@ int main(void)
     /* Polling mode: Wait for one message received */
     while (HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0) < 1U)
     {
-      /* Do nothing, wait */
-        // Call your new function and pass the address of your ADC instance
-        // Print the returned result
+        uint8_t rx_byte = 0;
+
+        if (HAL_UART_Receive(&huart2, &rx_byte, 1, 0) == HAL_OK)
+        {
+            if (rx_byte == 'A')
+            {
+                printf("Received 'A' - Starting motor sequence\r\n");
+
+                SetPWM(50);
+                HAL_Delay(500);
+
+                SetPWM(-50);
+                HAL_Delay(500);
+
+                SetPWM(0);
+
+                // Flush any bytes that arrived during the sequence
+                uint8_t flush;
+                while (HAL_UART_Receive(&huart2, &flush, 1, 0) == HAL_OK);
+            }
+        }
+
         printf("ADC Read: %lu\r\n", my_voltage_raw);
+        float current = read_ina219();
+        printf("Current Value: %d\r\n", (int)(current * 10000.0f));
 
-        HAL_Delay(500);
-
-		__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 2400);
-		__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 2400);
-
+        HAL_Delay(100);
     }
 
 
@@ -413,6 +522,54 @@ static void MX_FDCAN1_Init(void)
   /* USER CODE BEGIN FDCAN1_Init 2 */
 
   /* USER CODE END FDCAN1_Init 2 */
+
+}
+
+/**
+  * @brief I2C2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C2_Init(void)
+{
+
+  /* USER CODE BEGIN I2C2_Init 0 */
+
+  /* USER CODE END I2C2_Init 0 */
+
+  /* USER CODE BEGIN I2C2_Init 1 */
+
+  /* USER CODE END I2C2_Init 1 */
+  hi2c2.Instance = I2C2;
+  hi2c2.Init.Timing = 0x10805D88;
+  hi2c2.Init.OwnAddress1 = 0;
+  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c2.Init.OwnAddress2 = 0;
+  hi2c2.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c2, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C2_Init 2 */
+
+  /* USER CODE END I2C2_Init 2 */
 
 }
 
@@ -600,30 +757,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         my_voltage_raw = Read_ADC_Value(&hadc1);
     }
 }
-/* USER CODE END 4 */
 
-/**
-  * @brief  BSP User push-button callback
-  * @param  Button Specifies the pin connected EXTI line
-  * @retval None.
-  */
-void BSP_PB_Callback(Button_TypeDef Button)
-{
-  if (Button == BUTTON_USER)
-  {
-    /* Turn LED1 off */
-    BSP_LED_Off(LED1);
-
-    /* Add message to TX FIFO */
-    if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &txHeader, txData) != HAL_OK)
-    {
-      Error_Handler();
-    }
-
-    /* Delay for simple button debounce */
-    HAL_Delay(100U);
-  }
-}
 
 /**
   * @brief  Compares two buffers.
