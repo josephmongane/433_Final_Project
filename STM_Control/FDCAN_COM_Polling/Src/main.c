@@ -49,9 +49,9 @@ typedef enum {
 #define ADC_LOWER_LIMIT 500   // Stop threshold near 0
 #define ADC_UPPER_LIMIT 3500  // Stop threshold near 4095
 
-#define EINTMAX_CURRENT 1000.0f
-#define KP_CURRENT      0.5f
-#define KI_CURRENT      0.01f
+#define EINTMAX_CURRENT 200.0f
+#define KP_CURRENT      -0.7f
+#define KI_CURRENT      0.05f
 
 /* USER CODE END PD */
 
@@ -407,22 +407,17 @@ int main(void)
 	      if (control_state == STATE_IDLE && itest_index == 400)
 	      {
 	          // Sequence just finished, print all stored values
-	          printf("--- ITEST Results ---\r\n");
-	          for (int i = 0; i < 400; i++)
-	          {
-	              printf("Index %d | Desired: %d mA | Actual: %d mA\r\n",
-	                  i,
-	                  (int)current_setpoints[i],
-	                  (int)itest_actual_waveform[i]);
-	          }
-	          // Reset index so we don't print again
-	          itest_index = 0;
-	          printf("--- End of Results ---\r\n");
+	    	  for (int i = 0; i < 400; i++)
+	    	  {
+	    	      printf("%d, %d\n",
+	    	          (int)current_setpoints[i],
+	    	          (int)itest_actual_waveform[i]);
+	    	  }
+	    	  itest_index = 0;
 	      }
 	      else if (control_state == STATE_IDLE)
 	      {
-	          printf("Hello\r\n");
-	          HAL_Delay(1000);
+	          HAL_Delay(100);
 	      }
 	      // While ITEST is running, do nothing in the main loop
 	  }
