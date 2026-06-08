@@ -14,14 +14,14 @@ int main()
     // const uint32_t PERIOD_US = 1000;  // 1000Hz
     // uint32_t next_time = time_us_32();
 
-    // sleep_ms(1000);
-    // int force_avg = 0;
-    // for(int i = 0; i < 500; i++){
-    //     int val = hx711_read();
-    //     force_avg += val;
-    // }
-    // force_avg = force_avg / 500;
-    // printf("AVERAGE FORCE: %d\n", force_avg);
+    sleep_ms(1000);
+    int force_avg = 0;
+    for(int i = 0; i < 500; i++){
+        int val = hx711_read();
+        force_avg += val;
+    }
+    force_avg = force_avg / 500;
+    printf("AVERAGE FORCE: %d\n", force_avg);
 
     while (true) {
         // // COPIED ENCODER CODE
@@ -60,21 +60,13 @@ int main()
 
 
         // TESTING CODE
-        int num;
-        scanf("%d",&num);
+ 
+        float angles = encoder_read();
+        int forces = hx711_read() - force_avg; 
 
-        float angles[5000];
-        int forces [5000];
+        printf("%.2f %d\n", angles, forces); 
 
-        for(int i = 0; i < num; i++){
-            angles[i] = encoder_read();
-            forces[i] = hx711_read(); 
-            sleep_ms(10);
-        }
-        for(int i = 0; i < num; i++){
-            printf("%.2f %d\n", angles[i], forces[i]); 
-        }
-         
+        sleep_ms(10);
     }
 }
 
