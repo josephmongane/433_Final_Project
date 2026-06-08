@@ -25,11 +25,15 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef enum {
+    STATE_IDLE,
+    STATE_ITEST
+} ControlState;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -41,6 +45,14 @@
 #define INA219_REG_CONFIG 0x00 // config register address
 #define INA219_REG_CURRENT 0x04 // current register
 #define INA219_REG_CALIBRATION 0x05 // calibration register
+
+#define ADC_LOWER_LIMIT 500   // Stop threshold near 0
+#define ADC_UPPER_LIMIT 3500  // Stop threshold near 4095
+
+#define EINTMAX_CURRENT 200.0f
+#define KP_CURRENT      -0.7f
+#define KI_CURRENT      0.05f
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -74,6 +86,11 @@ volatile uint32_t my_voltage_raw;
 volatile uint8_t uart_rx_byte = 0;
 volatile uint8_t uart_rx_flag = 0;
 
+volatile ControlState control_state = STATE_IDLE;
+volatile uint16_t itest_index = 0;
+volatile float error_integral = 0.0f;
+volatile int16_t current_setpoints[400];
+float itest_actual_waveform[400];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -93,6 +110,9 @@ float read_ina219();
 void writeINA219(int reg, int value);
 signed short readINA219(unsigned char reg);
 void SetPWM(int8_t duty_cycle);
+uint8_t CheckADCLimit(void);
+
+void InitCurrentSetpoints(void);
 
 /* USER CODE END PFP */
 
@@ -203,6 +223,51 @@ void SetPWM(int8_t duty_cycle)
         __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
     }
 }
+
+/**
+  * @brief  Checks the ADC value and kills PWM if approaching either limit.
+  * @retval 1 if limit triggered and PWM was stopped, 0 if safe to continue
+  */
+uint8_t CheckADCLimit(void)
+{
+    uint32_t adc = my_voltage_raw;
+
+    if (adc <= ADC_LOWER_LIMIT)
+    {
+        SetPWM(0);
+        printf("ADC lower limit hit: %lu\r\n", adc);
+        return 1;
+    }
+    else if (adc >= ADC_UPPER_LIMIT)
+    {
+        SetPWM(0);
+        printf("ADC upper limit hit: %lu\r\n", adc);
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+  * @brief  Initializes current_setpoints with a sine wave profile
+  *         ranging from -50mA to +50mA over 400 samples.
+  * @retval None
+  */
+void InitCurrentSetpoints(void)
+{
+    for (int i = 0; i < 400; i++)
+    {
+        // Cycle every 100 samples = 4 complete cycles over 400 samples
+        if ((i % 100) < 50)
+        {
+            current_setpoints[i] = 50;
+        }
+        else
+        {
+            current_setpoints[i] = -50;
+        }
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -256,6 +321,7 @@ int main(void)
   MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
   init_ina219();
+  InitCurrentSetpoints();
 
 
   /* Configure reception filter to Rx FIFO 0 */
@@ -324,31 +390,25 @@ int main(void)
   while (1)
   {
     /* Polling mode: Wait for one message received */
-    while (HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0) < 1U)
-    {
-        if (uart_rx_flag)
-        {
-            uart_rx_flag = 0;
-
-            printf("Received 'A' - Starting motor sequence\r\n");
-
-            SetPWM(50);
-            HAL_Delay(500);
-            float current_fwd = read_ina219();
-            printf("Forward Current: %d mA\r\n", (int)current_fwd);
-
-            SetPWM(-50);
-            HAL_Delay(500);
-            float current_rev = read_ina219();
-            printf("Reverse Current: %d mA\r\n", (int)current_rev);
-            SetPWM(0);
-        }
-        else
-        {
-            printf("Hello\r\n");
-            HAL_Delay(1000);
-        }
-    }
+	  while (HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0) < 1U)
+	  {
+	      if (control_state == STATE_IDLE && itest_index == 400)
+	      {
+	          // Sequence just finished, print all stored values
+	    	  for (int i = 0; i < 400; i++)
+	    	  {
+	    	      printf("%d, %d\n",
+	    	          (int)current_setpoints[i],
+	    	          (int)itest_actual_waveform[i]);
+	    	  }
+	    	  itest_index = 0;
+	      }
+	      else if (control_state == STATE_IDLE)
+	      {
+	          HAL_Delay(100);
+	      }
+	      // While ITEST is running, do nothing in the main loop
+	  }
 
 
     /* Retrieve Rx message from RX FIFO0 */
@@ -740,9 +800,61 @@ static void MX_GPIO_Init(void)
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-    if (htim->Instance == TIM2) // Match your interrupt timer instance
+    if (htim->Instance == TIM2)
     {
         my_voltage_raw = Read_ADC_Value(&hadc1);
+
+        switch (control_state)
+        {
+            case STATE_ITEST:
+            {
+                if (itest_index < 400)
+                {
+                    float u      = 0.0f;
+                    float result = read_ina219();
+
+                    // Store actual value
+                    itest_actual_waveform[itest_index] = result;
+
+                    // Compute error
+                    float error = current_setpoints[itest_index] - result;
+
+                    // Integrate error
+                    error_integral += error;
+
+                    // Clamp integral
+                    if (error_integral >  EINTMAX_CURRENT) error_integral =  EINTMAX_CURRENT;
+                    if (error_integral < -EINTMAX_CURRENT) error_integral = -EINTMAX_CURRENT;
+
+                    // PI control effort
+                    u = (KP_CURRENT * error) + (KI_CURRENT * error_integral);
+
+                    // Clamp duty cycle
+                    if (u >  100.0f) u =  100.0f;
+                    if (u < -100.0f) u = -100.0f;
+
+                    // Only drive motor if within ADC position limits
+                    if (!CheckADCLimit())
+                    {
+                        SetPWM((int8_t)u);
+                    }
+
+                    itest_index++;
+                }
+                else
+                {
+                    // Sequence complete, stop motor and return to idle
+                    SetPWM(0);
+                    control_state = STATE_IDLE;
+                }
+                break;
+            }
+
+            case STATE_IDLE:
+            default:
+                SetPWM(0);
+                break;
+        }
     }
 }
 
@@ -775,11 +887,13 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART2)
     {
-        if (uart_rx_byte == 'A')
+        if (uart_rx_byte == 'A' && control_state == STATE_IDLE)
         {
-            uart_rx_flag = 1;
+            // Reset controller state before starting
+            itest_index      = 0;
+            error_integral   = 0.0f;
+            control_state    = STATE_ITEST;
         }
-        // Re-arm the interrupt for the next byte
         HAL_UART_Receive_IT(&huart2, (uint8_t*)&uart_rx_byte, 1);
     }
 }
