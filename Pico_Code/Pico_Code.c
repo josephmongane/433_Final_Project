@@ -11,46 +11,73 @@ int main()
     can_init();
     hx711_init();
 
-    const uint32_t PERIOD_US = 1000;  // 1000Hz
-    uint32_t next_time = time_us_32();
+    // const uint32_t PERIOD_US = 1000;  // 1000Hz
+    // uint32_t next_time = time_us_32();
+
+    // sleep_ms(1000);
+    // int force_avg = 0;
+    // for(int i = 0; i < 500; i++){
+    //     int val = hx711_read();
+    //     force_avg += val;
+    // }
+    // force_avg = force_avg / 500;
+    // printf("AVERAGE FORCE: %d\n", force_avg);
 
     while (true) {
-        // COPIED ENCODER CODE
-        float angle = encoder_read();
-        printf("%f\n", angle);
+        // // COPIED ENCODER CODE
+        // float angle = encoder_read();
+        // printf("ANGLE: %f\n", angle);
 
-        // COPIED FORCE SENSOR CODE
+        // // COPIED FORCE SENSOR CODE
+        // int num;
+        // scanf("%d",&num);
+
+        // int voltages[5000];
+        // uint64_t times[5000];
+        
+        // for (int i = 0; i < num; i++){
+        //     int val = hx711_read();
+
+        //     voltages[i] = val;
+        //     times[i] = to_ms_since_boot(get_absolute_time());
+        // }
+
+        // for (int i = 0; i < num; i++){
+        //     printf("%d %llu %d\n", i, times[i], voltages[i]);
+        // }
+
+        // // COPIED CAN CODE
+        // bool acked = can_send_float(CAN_ID, desired_current);
+ 
+        // if (!acked) {
+        //     printf("CAN no ACK\n");
+        // }
+ 
+        // next_time += PERIOD_US;
+        // uint32_t now = time_us_32();
+        // if ((int32_t)(next_time - now) > 0) {
+        //     sleep_us(next_time - now);
+
+
+        // TESTING CODE
         int num;
         scanf("%d",&num);
 
-        int voltages[5000];
-        uint64_t times[5000];
-        
-        for (int i = 0; i < num; i++){
-            int val = hx711_read();
+        float angles[5000];
+        int forces [5000];
 
-            voltages[i] = val;
-            times[i] = to_ms_since_boot(get_absolute_time());
+        for(int i = 0; i < num; i++){
+            angles[i] = encoder_read();
+            forces[i] = hx711_read(); 
+            sleep_ms(10);
         }
-
-        for (int i = 0; i < num; i++){
-            printf("%d %llu %d\n", i, times[i], voltages[i]);
+        for(int i = 0; i < num; i++){
+            printf("%.2f %d\n", angles[i], forces[i]); 
         }
-
-        // COPIED CAN CODE
-        bool acked = can_send_float(CAN_ID, desired_current);
- 
-        if (!acked) {
-            printf("CAN no ACK\n");
-        }
- 
-        next_time += PERIOD_US;
-        uint32_t now = time_us_32();
-        if ((int32_t)(next_time - now) > 0) {
-            sleep_us(next_time - now);
-        }
+         
     }
 }
+
 
 void i2c_init_all(){
     // I2C Initialisation. Using it at 400Khz.
