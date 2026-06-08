@@ -51,8 +51,8 @@ typedef enum {
 
 #define EINTMAX_CURRENT 200.0f
 #define KP_CURRENT      -0.7f
-#define KI_CURRENT      0.05f
-
+#define KI_CURRENT      0.5f
+å
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -179,8 +179,10 @@ void writeINA219(int reg, int value){
 
 // read 2 bytes
 signed short readINA219(unsigned char reg){
-    HAL_I2C_Master_Transmit(&hi2c2, INA219_ADDR<<1, &reg, 1, 10);
+
     uint8_t buffer[2];
+
+    HAL_I2C_Master_Transmit(&hi2c2, INA219_ADDR<<1, &reg, 1, 10);
     HAL_I2C_Master_Receive(&hi2c2, INA219_ADDR<<1, buffer, 2, 10);
 
     signed short value = (buffer[0]<<8)|buffer[1];
@@ -417,7 +419,7 @@ int main(void)
 	      }
 	      else if (control_state == STATE_IDLE)
 	      {
-	          HAL_Delay(100);
+	    	  HAL_Delay(100);
 	      }
 	      // While ITEST is running, do nothing in the main loop
 	  }
@@ -848,7 +850,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
                     // Only drive motor if within ADC position limits
                     if (!CheckADCLimit())
                     {
-                        SetPWM((int8_t)u);
+                        SetPWM((int8_t)(u));
                     }
 
                     itest_index++;
@@ -864,7 +866,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
             case STATE_IDLE:
             default:
-                SetPWM(0);
+            	SetPWM(0);
                 break;
         }
     }
