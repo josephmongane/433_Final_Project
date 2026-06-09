@@ -50,9 +50,8 @@ typedef enum {
 #define ADC_UPPER_LIMIT 3500  // Stop threshold near 4095
 
 #define EINTMAX_CURRENT 200.0f
-#define KP_CURRENT      -0.7f
-#define KI_CURRENT      0.5f
-å
+#define KP_CURRENT      0.75f
+#define KI_CURRENT      0.0f
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -419,7 +418,7 @@ int main(void)
 	      }
 	      else if (control_state == STATE_IDLE)
 	      {
-	    	  HAL_Delay(100);
+	    	  HAL_Delay(10);
 	      }
 	      // While ITEST is running, do nothing in the main loop
 	  }
