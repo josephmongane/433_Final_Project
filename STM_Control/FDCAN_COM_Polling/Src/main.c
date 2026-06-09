@@ -50,8 +50,8 @@ typedef enum {
 #define ADC_UPPER_LIMIT 3500  // Stop threshold near 4095
 
 #define EINTMAX_CURRENT 200.0f
-#define KP_CURRENT      0.75f
-#define KI_CURRENT      0.0f
+#define KP_CURRENT      0.2f
+#define KI_CURRENT      0.2f
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -108,7 +108,7 @@ void init_ina219();
 float read_ina219();
 void writeINA219(int reg, int value);
 signed short readINA219(unsigned char reg);
-void SetPWM(int8_t duty_cycle);
+void SetPWM(float duty_cycle);
 uint8_t CheckADCLimit(void);
 
 void InitCurrentSetpoints(void);
@@ -196,30 +196,27 @@ signed short readINA219(unsigned char reg){
   *         Zero     → coast (both channels = 0)
   * @retval None
   */
-void SetPWM(int8_t duty_cycle)
+void SetPWM(float duty_cycle)
 {
     // Clamp input to valid range
-    if (duty_cycle > 100)  duty_cycle = 100;
-    if (duty_cycle < -100) duty_cycle = -100;
+    if (duty_cycle >  100.0f) duty_cycle =  100.0f;
+    if (duty_cycle < -100.0f) duty_cycle = -100.0f;
 
     // TIM1 period is 2400, so scale duty cycle accordingly
-    uint32_t compare = (uint32_t)((abs(duty_cycle) * 2400) / 100);
+    uint32_t compare = (uint32_t)((fabsf(duty_cycle) * 2400.0f) / 100.0f);
 
-    if (duty_cycle > 0)
+    if (duty_cycle > 0.0f)
     {
-        // Forward: CH1 drives, CH2 idle
         __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, compare);
         __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
     }
-    else if (duty_cycle < 0)
+    else if (duty_cycle < 0.0f)
     {
-        // Reverse: CH2 drives, CH1 idle
         __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
         __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, compare);
     }
     else
     {
-        // Coast: both channels off
         __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
         __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
     }
@@ -258,14 +255,14 @@ void InitCurrentSetpoints(void)
 {
     for (int i = 0; i < 400; i++)
     {
-        // Cycle every 100 samples = 4 complete cycles over 400 samples
-        if ((i % 100) < 50)
+        // Cycle every 200 samples = 2 complete cycles over 400 samples
+        if ((i % 200) < 100)
         {
-            current_setpoints[i] = 50;
+            current_setpoints[i] = 600;
         }
         else
         {
-            current_setpoints[i] = -50;
+            current_setpoints[i] = -600;
         }
     }
 }
@@ -849,7 +846,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
                     // Only drive motor if within ADC position limits
                     if (!CheckADCLimit())
                     {
-                        SetPWM((int8_t)(u));
+                        SetPWM(u);
                     }
 
                     itest_index++;
