@@ -38,8 +38,8 @@ typedef enum {
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define TX_ID          (0x111)   /* TX CAN message identifier    */
-#define RX_ID          (0x111)   /* RX CAN message identifier    */
+#define TX_ID          (0x150)   /* TX CAN message identifier    */
+#define RX_ID          (0x150)   /* RX CAN message identifier    */
 
 #define INA219_ADDR 0b1000000 // I2C address
 #define INA219_REG_CONFIG 0x00 // config register address
@@ -75,10 +75,10 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 FDCAN_RxHeaderTypeDef rxHeader;
 FDCAN_TxHeaderTypeDef txHeader;
-uint8_t rxData[16U];
-static const uint8_t txData[] = {0x10, 0x32, 0x54, 0x76, 0x98, 0x00, 0x11, 0x22,
-                                 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x00
-                                };
+uint8_t rxData[8U];
+//static const uint8_t txData[] = {0x10, 0x32, 0x54, 0x76, 0x98, 0x00, 0x11, 0x22,
+//                                 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x00
+//                                };
 
 volatile uint32_t my_voltage_raw;
 
@@ -353,8 +353,6 @@ int main(void)
   txHeader.TxFrameType         = FDCAN_DATA_FRAME;
   txHeader.DataLength          = FDCAN_DLC_BYTES_16;
   txHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-  txHeader.BitRateSwitch       = FDCAN_BRS_ON;
-  txHeader.FDFormat            = FDCAN_FD_CAN;
   txHeader.TxEventFifoControl  = FDCAN_NO_TX_EVENTS;
   txHeader.MessageMarker       = 0U;
 
@@ -363,16 +361,6 @@ int main(void)
     * TdcOffset default recommended value: DataTimeSeg1 * DataPrescaler
     * TdcFilter default recommended value: 0
     */
-  if (HAL_FDCAN_ConfigTxDelayCompensation(&hfdcan1,
-                                          (hfdcan1.Init.DataPrescaler * hfdcan1.Init.DataTimeSeg1), 0U) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  if (HAL_FDCAN_EnableTxDelayCompensation(&hfdcan1) != HAL_OK)
-  {
-    Error_Handler();
-  }
 
   /* Start FDCAN controller */
   if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK)
@@ -428,15 +416,19 @@ int main(void)
     }
 
     /* Compare received RX message to expected data. Ignore if not matching. */
-    if ((rxHeader.Identifier == RX_ID) &&
-        (rxHeader.IdType     == FDCAN_STANDARD_ID) &&
-        (rxHeader.DataLength == FDCAN_DLC_BYTES_16) &&
-        (BufferCmp8b(txData, rxData, COUNTOF(rxData)) == 0U))
+    if (rxHeader.Identifier == RX_ID)
     {
       /* Turn LED1 on */
 
       BSP_LED_On(LED1);
-      // comment
+
+      float value;
+	  memcpy(&value, rxData, 4);
+	  //printf("desired_current = %.4d\r\n", (int)value);
+	  } else {
+		  //printf("Unexpected DLC: 0x%02lX\r\n", rxHeader.DataLength);
+	  }
+		  // comment
     }
     /* USER CODE END WHILE */
 
@@ -557,19 +549,15 @@ static void MX_FDCAN1_Init(void)
   /* USER CODE END FDCAN1_Init 1 */
   hfdcan1.Instance = FDCAN1;
   hfdcan1.Init.ClockDivider = FDCAN_CLOCK_DIV1;
-  hfdcan1.Init.FrameFormat = FDCAN_FRAME_FD_BRS;
-  hfdcan1.Init.Mode = FDCAN_MODE_NORMAL;
-  hfdcan1.Init.AutoRetransmission = ENABLE;
-  hfdcan1.Init.TransmitPause = ENABLE;
-  hfdcan1.Init.ProtocolException = DISABLE;
-  hfdcan1.Init.NominalPrescaler = 1;
-  hfdcan1.Init.NominalSyncJumpWidth = 12;
-  hfdcan1.Init.NominalTimeSeg1 = 35;
-  hfdcan1.Init.NominalTimeSeg2 = 12;
-  hfdcan1.Init.DataPrescaler = 1;
-  hfdcan1.Init.DataSyncJumpWidth = 6;
-  hfdcan1.Init.DataTimeSeg1 = 17;
-  hfdcan1.Init.DataTimeSeg2 = 6;
+  hfdcan1.Init.FrameFormat         = FDCAN_FRAME_CLASSIC;  // was FDCAN_FRAME_FD_BRS
+  hfdcan1.Init.NominalPrescaler    = 24;                   // was 1
+  hfdcan1.Init.NominalSyncJumpWidth = 4;                   // was 12
+  hfdcan1.Init.NominalTimeSeg1     = 11;                   // was 35
+  hfdcan1.Init.NominalTimeSeg2     = 4;                    // was 12
+  hfdcan1.Init.DataPrescaler       = 24;                   // was 1
+  hfdcan1.Init.DataSyncJumpWidth   = 4;                    // was 6
+  hfdcan1.Init.DataTimeSeg1        = 11;                   // was 17
+  hfdcan1.Init.DataTimeSeg2        = 4;                    // was 6
   hfdcan1.Init.StdFiltersNbr = 1;
   hfdcan1.Init.ExtFiltersNbr = 0;
   hfdcan1.Init.TxFifoQueueMode = FDCAN_TX_FIFO_OPERATION;
