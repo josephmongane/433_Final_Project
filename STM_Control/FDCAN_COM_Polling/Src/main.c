@@ -49,9 +49,9 @@ typedef enum {
 #define ADC_LOWER_LIMIT 500   // Stop threshold near 0
 #define ADC_UPPER_LIMIT 3500  // Stop threshold near 4095
 
-#define EINTMAX_CURRENT 200.0f
-#define KP_CURRENT      0.2f
-#define KI_CURRENT      0.2f
+#define EINTMAX_CURRENT 2000.0f
+#define KP_CURRENT      0.1f
+#define KI_CURRENT      0.05f
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -76,9 +76,9 @@ UART_HandleTypeDef huart2;
 FDCAN_RxHeaderTypeDef rxHeader;
 FDCAN_TxHeaderTypeDef txHeader;
 uint8_t rxData[8U];
-//static const uint8_t txData[] = {0x10, 0x32, 0x54, 0x76, 0x98, 0x00, 0x11, 0x22,
-//                                 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x00
-//                                };
+static const uint8_t txData[] = {0x10, 0x32, 0x54, 0x76, 0x98, 0x00, 0x11, 0x22,
+                                0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x00
+                                };
 
 volatile uint32_t my_voltage_raw;
 
@@ -207,18 +207,18 @@ void SetPWM(float duty_cycle)
 
     if (duty_cycle > 0.0f)
     {
-        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, compare);
-        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (2400 -compare));
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 2400);
     }
     else if (duty_cycle < 0.0f)
     {
-        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
-        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, compare);
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 2400);
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, (2400 - compare));
     }
     else
     {
-        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
-        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 2400);
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 2400);
     }
 }
 
@@ -403,7 +403,7 @@ int main(void)
 	      }
 	      else if (control_state == STATE_IDLE)
 	      {
-	    	  HAL_Delay(10);
+	    	  HAL_Delay(50);
 	      }
 	      // While ITEST is running, do nothing in the main loop
 	  }
@@ -416,21 +416,16 @@ int main(void)
     }
 
     /* Compare received RX message to expected data. Ignore if not matching. */
-    if (rxHeader.Identifier == RX_ID)
-    {
-      /* Turn LED1 on */
-
-      BSP_LED_On(LED1);
-
-      float value;
-	  memcpy(&value, rxData, 4);
-	  //printf("desired_current = %.4d\r\n", (int)value);
-	  } else {
-		  //printf("Unexpected DLC: 0x%02lX\r\n", rxHeader.DataLength);
-	  }
-		  // comment
-    }
-    /* USER CODE END WHILE */
+       if ((rxHeader.Identifier == RX_ID) &&
+           (rxHeader.IdType     == FDCAN_STANDARD_ID) &&
+           (rxHeader.DataLength == FDCAN_DLC_BYTES_16) &&
+           (BufferCmp8b(txData, rxData, COUNTOF(rxData)) == 0U))
+       {
+         /* Turn LED1 on */
+         BSP_LED_On(LED1);
+         // comment
+       }
+       /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
