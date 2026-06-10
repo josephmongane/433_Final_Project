@@ -4,67 +4,80 @@
 #include "Pico_Code.h"
 #include "can.h"
 
-#define MAX_CURRENT 400
-#define MIN_CURRENT 80
+#define MAX_CURRENT 600
+#define MIN_CURRENT 10
+#define NUM_SAMPLES_FORCE_AVG 500
+
+#define WALL_FORCE 100000
+
+// /// Force Filtering
+// #define a 0.2
+
+// /// PD Control
+// #define Kp 0.03
+// #define Kd -0.01
+
 
 int main()
 {
     stdio_init_all();
     i2c_init_all();
     can_init();
-    hx711_init();
-
-    sleep_ms(1000);
-    int force_avg = 0;
-    for(int i = 0; i < 500; i++){
-        int val = hx711_read();
-        force_avg += val;
-    }
-    force_avg = force_avg / 500;
+    int force_avg = hx711_init();
+    
     printf("AVERAGE FORCE: %d\n", force_avg);
+
     int force_filtered = 0;
-    float a = 0.2;
-    float b = 1 - a;
 
     int prev_err = 0;
-    int error;
-    int d_error;
-    int desired_force = 0;
-
-    float kp = 0.03;
-    float kd = -0.01;
-
+    float error;
+    float d_error;
     float desired_current;
 
+    float a = 0.2;
+    float Kp = 0.02;
+    float Kd = -0.01;
+
+    int desired_force = 0;
+
     while (true) {
-
-        // TESTING CODE
- 
         float angles = encoder_read();
-        int forces = hx711_read() - force_avg;
-        force_filtered = a*force_filtered + b*forces; 
+        int forces = hx711_read();
+        int forces_2 = forces - force_avg;
+        force_filtered = a*force_filtered + (1-a)*forces_2; 
 
+        if ((angles <= 5) && (angles >= 1)) 
+        {
+            desired_force = (WALL_FORCE/20) * angles;
+            Kp = 0.5; 
+            Kd = 0.1;
+        }
+        else if(angles < 100)
+        {
+            desired_force = WALL_FORCE;
+            Kp = 0.5; 
+            Kd = 0.1;
+        }
+        else
+        {
+            desired_force = 0;
+            Kp = 0.02;
+            Kd = -0.01;
+        }
+
+        // PD control
         error = desired_force - force_filtered;
-        
         d_error = error - prev_err;
+        desired_current = Kp*error + Kd*d_error;
 
-        desired_current = kp*error + kd*d_error;
+        // Clamping the output value
+        if (desired_current > MAX_CURRENT){ desired_current = MAX_CURRENT;}
+        else if (desired_current < -MAX_CURRENT){desired_current = -MAX_CURRENT;}
+        if (desired_current < MIN_CURRENT && desired_current > -MIN_CURRENT){ desired_current = 0;}
 
-        if (desired_current > MAX_CURRENT){
-            desired_current = MAX_CURRENT;
-        }
-        else if (desired_current < -MAX_CURRENT){
-            desired_current = -MAX_CURRENT;
-        }
-
-        if (desired_current < MIN_CURRENT && desired_current > -MIN_CURRENT){
-            desired_current = 0;
-        }
-
-        printf("%f\n", desired_current);
         // CAN CODE
         bool acked = can_send_float(CAN_ID, desired_current);
-        //printf("%.2f %d %d\n", angles, forces, force_filtered); 
+        printf("%.2f %d\n", angles, force_filtered); 
         prev_err = error;
 
         sleep_ms(10);
@@ -101,7 +114,7 @@ float encoder_read(){
     return angle_deg;
 }
 
-void hx711_init(){
+int hx711_init(){
     // Not too sure why there's a pull up for PIN_DOUT (does it stay pulled up)
 
     gpio_init(PIN_DOUT);
@@ -111,6 +124,17 @@ void hx711_init(){
     gpio_init(PIN_SCK);
     gpio_set_dir(PIN_SCK, GPIO_OUT);
     gpio_put(PIN_SCK, 0);
+
+    int force_avg = 0;
+
+    for(int i = 0; i < NUM_SAMPLES_FORCE_AVG; i++){
+        int val = hx711_read();
+        force_avg += val;
+    }
+
+    force_avg = force_avg / NUM_SAMPLES_FORCE_AVG;
+    
+    return force_avg;
 }
 
 int hx711_read(){
