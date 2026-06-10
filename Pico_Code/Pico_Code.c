@@ -4,6 +4,9 @@
 #include "Pico_Code.h"
 #include "can.h"
 
+#define MAX_CURRENT 400
+#define MIN_CURRENT 80
+
 int main()
 {
     stdio_init_all();
@@ -23,24 +26,48 @@ int main()
     float a = 0.2;
     float b = 1 - a;
 
-    
+    int prev_err = 0;
+    int error;
+    int d_error;
+    int desired_force = 0;
+
+    float kp = 0.03;
+    float kd = -0.01;
+
+    float desired_current;
 
     while (true) {
-
-        // CAN CODE
-        float desired_current = 100.0;
-        bool acked = can_send_float(CAN_ID, desired_current);
-
 
         // TESTING CODE
  
         float angles = encoder_read();
-        int forces = hx711_read() - force_avg; 
-        force_filtered = a*force_filtered + b*forces;
+        int forces = hx711_read() - force_avg;
+        force_filtered = a*force_filtered + b*forces; 
 
+        error = desired_force - force_filtered;
+        
+        d_error = error - prev_err;
+
+        desired_current = kp*error + kd*d_error;
+
+        if (desired_current > MAX_CURRENT){
+            desired_current = MAX_CURRENT;
+        }
+        else if (desired_current < -MAX_CURRENT){
+            desired_current = -MAX_CURRENT;
+        }
+
+        if (desired_current < MIN_CURRENT && desired_current > -MIN_CURRENT){
+            desired_current = 0;
+        }
+
+        printf("%f\n", desired_current);
+        // CAN CODE
+        bool acked = can_send_float(CAN_ID, desired_current);
         //printf("%.2f %d %d\n", angles, forces, force_filtered); 
+        prev_err = error;
 
-        sleep_ms(100);
+        sleep_ms(10);
     }
 }
 
