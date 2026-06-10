@@ -26,12 +26,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 typedef enum {
-    STATE_IDLE,
+    STATE_PICO_COM,
     STATE_ITEST
 } ControlState;
 /* USER CODE END PTD */
@@ -76,20 +77,21 @@ UART_HandleTypeDef huart2;
 FDCAN_RxHeaderTypeDef rxHeader;
 FDCAN_TxHeaderTypeDef txHeader;
 uint8_t rxData[8U];
-static const uint8_t txData[] = {0x10, 0x32, 0x54, 0x76, 0x98, 0x00, 0x11, 0x22,
-                                0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x00
-                                };
+//static const uint8_t txData[] = {0x10, 0x32, 0x54, 0x76, 0x98, 0x00, 0x11, 0x22,
+        //                    0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x00
+               //                 };
 
 volatile uint32_t my_voltage_raw;
 
 volatile uint8_t uart_rx_byte = 0;
 volatile uint8_t uart_rx_flag = 0;
 
-volatile ControlState control_state = STATE_IDLE;
+volatile ControlState control_state = STATE_PICO_COM;
 volatile uint16_t itest_index = 0;
 volatile float error_integral = 0.0f;
 volatile int16_t current_setpoints[400];
 float itest_actual_waveform[400];
+volatile float pico_current;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -351,8 +353,10 @@ int main(void)
   txHeader.Identifier          = TX_ID;
   txHeader.IdType              = FDCAN_STANDARD_ID;
   txHeader.TxFrameType         = FDCAN_DATA_FRAME;
-  txHeader.DataLength          = FDCAN_DLC_BYTES_16;
+  txHeader.DataLength          = FDCAN_DLC_BYTES_4;   // match your expected payload
   txHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+  txHeader.BitRateSwitch       = FDCAN_BRS_OFF;        // no BRS in classic mode
+  txHeader.FDFormat            = FDCAN_CLASSIC_CAN;    // explicitly classic
   txHeader.TxEventFifoControl  = FDCAN_NO_TX_EVENTS;
   txHeader.MessageMarker       = 0U;
 
@@ -390,7 +394,7 @@ int main(void)
     /* Polling mode: Wait for one message received */
 	  while (HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0) < 1U)
 	  {
-	      if (control_state == STATE_IDLE && itest_index == 400)
+	      if (control_state == STATE_PICO_COM && itest_index == 400)
 	      {
 	          // Sequence just finished, print all stored values
 	    	  for (int i = 0; i < 400; i++)
@@ -401,7 +405,7 @@ int main(void)
 	    	  }
 	    	  itest_index = 0;
 	      }
-	      else if (control_state == STATE_IDLE)
+	      else if (control_state == STATE_PICO_COM)
 	      {
 	    	  HAL_Delay(50);
 	      }
@@ -416,15 +420,18 @@ int main(void)
     }
 
     /* Compare received RX message to expected data. Ignore if not matching. */
-       if ((rxHeader.Identifier == RX_ID) &&
-           (rxHeader.IdType     == FDCAN_STANDARD_ID) &&
-           (rxHeader.DataLength == FDCAN_DLC_BYTES_16) &&
-           (BufferCmp8b(txData, rxData, COUNTOF(rxData)) == 0U))
-       {
-         /* Turn LED1 on */
-         BSP_LED_On(LED1);
-         // comment
-       }
+    // Expecting 4 bytes = one float
+    if (rxHeader.DataLength == FDCAN_DLC_BYTES_4)
+    {
+        float temp;
+        memcpy(&temp, rxData, 4);
+        pico_current = temp;
+        printf("desired_current = %d\r\n", (int)pico_current);
+    }
+	else
+	{
+		printf("Unexpected DLC: 0x%02lX\r\n", rxHeader.DataLength);
+	}
        /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -831,19 +838,45 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
                     {
                         SetPWM(u);
                     }
-
                     itest_index++;
                 }
                 else
                 {
                     // Sequence complete, stop motor and return to idle
                     SetPWM(0);
-                    control_state = STATE_IDLE;
+                    control_state = STATE_PICO_COM;
                 }
                 break;
             }
 
-            case STATE_IDLE:
+            case STATE_PICO_COM:
+            {
+                float u      = 0.0f;
+                float result = read_ina219();
+
+                // Compute error
+                float error = pico_current - result;
+                // Integrate error
+                error_integral += error;
+
+                // Clamp integral
+                if (error_integral >  EINTMAX_CURRENT) error_integral =  EINTMAX_CURRENT;
+                if (error_integral < -EINTMAX_CURRENT) error_integral = -EINTMAX_CURRENT;
+
+                // PI control effort
+                u = (KP_CURRENT * error) + (KI_CURRENT * error_integral);
+
+                // Clamp duty cycle
+                if (u >  100.0f) u =  100.0f;
+                if (u < -100.0f) u = -100.0f;
+
+                // Only drive motor if within ADC position limits
+                if (!CheckADCLimit())
+                {
+                    SetPWM(u);
+                }
+                break;
+            }
             default:
             	SetPWM(0);
                 break;
@@ -880,7 +913,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART2)
     {
-        if (uart_rx_byte == 'A' && control_state == STATE_IDLE)
+        if (uart_rx_byte == 'A' && control_state == STATE_PICO_COM)
         {
             // Reset controller state before starting
             itest_index      = 0;
