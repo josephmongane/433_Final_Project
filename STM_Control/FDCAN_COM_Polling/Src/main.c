@@ -91,7 +91,7 @@ volatile uint16_t itest_index = 0;
 volatile float error_integral = 0.0f;
 volatile int16_t current_setpoints[400];
 float itest_actual_waveform[400];
-volatile float pico_current;
+volatile float pico_current = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
